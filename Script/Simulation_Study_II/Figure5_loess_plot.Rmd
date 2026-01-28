@@ -1,0 +1,918 @@
+---
+title: "Fig4 loess"
+author: "Renie Liu"
+date: "2025-08-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 200
+
+```{r message = FALSE}
+#install.packages("huge")
+library(huge)
+#install.packages("semTools")
+library(semTools)
+#install.packages("corrplot")
+library(corrplot)
+#install.packages("dplyr")
+library(dplyr)
+#install.packages("readr")
+library(readr)
+#install.packages("GGMridge")
+library(GGMridge)
+#install.packages("GeneNet")
+library(GeneNet)
+#install.packages("tidyverse")
+library(tidyverse)
+#install.packages("ggplot2")
+library(ggplot2)
+#install.packages("moments")
+library(moments)
+
+GGMseed <- c(21169, 24918, 30401, 31829, 44683, 46825, 59075, 83133, 93595, 145952,
+             153263, 211035, 223212, 236829, 264699, 277048, 295482, 309734, 314778, 341850,
+             343070, 361673, 386319, 418871, 434826, 456011, 457665, 463159, 516642, 517898,
+             537280, 598693, 634619, 645741, 655370, 685033, 728341, 734175, 738175, 769225,
+             773687, 790298, 802683, 870961, 875458, 890909, 891868, 893344, 895078, 935644)
+
+FP_skew <- vector("list", 50)
+FP_kurt <- vector("list", 50)
+FN_skew <- vector("list", 50)
+FN_kurt <- vector("list", 50)
+
+for (i in 1:50) {
+##!!
+seed <- GGMseed[i] 
+
+set.seed(seed)
+
+n <- 1000  # Number of samples
+p <- 100     # Number of variables
+mu <- rep(0, p)
+subsample_sizes <- c(200, 400, 600, 800, 1000)
+
+metrics <- read.csv("2-2_metrics_values.csv")
+metrics <- subset(metrics, abs(skewness) <= 5)
+
+data_forsigma <- huge.generator(n, d = p, graph = "cluster", vis = FALSE)
+Sigma <- as.matrix(data_forsigma$sigma)
+diag(Sigma) <- 1
+actual <- as.matrix(data_forsigma$theta)
+
+positions <- which(actual == 1 & upper.tri(actual), arr.ind = TRUE)
+# Convert to data frame
+positive <- as.data.frame(positions)
+colnames(positive) <- c("row", "col")
+
+positions <- which(actual == 0 & upper.tri(actual), arr.ind = TRUE)
+# Convert to data frame
+negative <- as.data.frame(positions)
+colnames(negative) <- c("row", "col")
+
+##!!
+dat <- read.csv(paste0("Synthetic_count_data_200_GGM_", seed,".csv")) 
+FPdata <- semi_join(dat, negative, by = c("row", "col"))
+FNdata <- semi_join(dat, positive, by = c("row", "col"))
+
+p1 <- ggplot(FPdata, aes(x = skewavg, y = FP_count)) + 
+      geom_smooth(method = "loess", se = TRUE)
+
+p2 <- ggplot(FPdata, aes(x = kurtavg, y = FP_count)) + 
+      geom_smooth(method = "loess", se = TRUE)
+
+p3 <- ggplot(FNdata, aes(x = skewavg, y = FN_count)) + 
+      geom_smooth(method = "loess", se = TRUE)
+
+p4 <- ggplot(FNdata, aes(x = kurtavg, y = FN_count)) + 
+      geom_smooth(method = "loess", se = TRUE)
+
+pb <- ggplot_build(p1)
+FP_skew[[i]] <- pb$data[[1]]
+pb <- ggplot_build(p2)
+FP_kurt[[i]] <- pb$data[[1]] 
+pb <- ggplot_build(p3)
+FN_skew[[i]] <- pb$data[[1]] 
+pb <- ggplot_build(p4)
+FN_kurt[[i]] <- pb$data[[1]] 
+
+print(i)
+}
+#F8766D #A3A500 #00BF7D #00B0F6 #E76BF3
+
+# FP_skew is assumed to be a list of 50 data.frames, each with $x and $y
+smooth_list <- FP_skew
+
+xmin <- min(sapply(smooth_list, function(d) min(d$x, na.rm = TRUE)))
+xmax <- max(sapply(smooth_list, function(d) max(d$x, na.rm = TRUE)))
+
+x_grid <- seq(xmin, xmax, length.out = 200)
+
+Y <- sapply(smooth_list, function(d) {
+  approx(d$x, d$y, xout = x_grid, rule = 1)$y  # NAs outside each curve's support
+})
+
+# 4) Average (and optional uncertainty across runs)
+avg_y  <- rowMeans(Y, na.rm = TRUE)
+n_eff  <- rowSums(!is.na(Y))
+sd_y   <- apply(Y, 1, sd, na.rm = TRUE)
+se_y   <- sd_y / sqrt(pmax(n_eff, 1))
+lo95   <- avg_y - 1.96 * se_y
+hi95   <- avg_y + 1.96 * se_y
+
+avg_curve_200_FP_skew <- data.frame(x = x_grid, y = avg_y, ymin = lo95, ymax = hi95, n = n_eff)
+
+# FP_skew is assumed to be a list of 50 data.frames, each with $x and $y
+smooth_list <- FP_kurt
+
+xmin <- min(sapply(smooth_list, function(d) min(d$x, na.rm = TRUE)))
+xmax <- max(sapply(smooth_list, function(d) max(d$x, na.rm = TRUE)))
+
+x_grid <- seq(xmin, xmax, length.out = 200)
+
+Y <- sapply(smooth_list, function(d) {
+  approx(d$x, d$y, xout = x_grid, rule = 1)$y  # NAs outside each curve's support
+})
+
+# 4) Average (and optional uncertainty across runs)
+avg_y  <- rowMeans(Y, na.rm = TRUE)
+n_eff  <- rowSums(!is.na(Y))
+sd_y   <- apply(Y, 1, sd, na.rm = TRUE)
+se_y   <- sd_y / sqrt(pmax(n_eff, 1))
+lo95   <- avg_y - 1.96 * se_y
+hi95   <- avg_y + 1.96 * se_y
+
+avg_curve_200_FP_kurt <- data.frame(x = x_grid, y = avg_y, ymin = lo95, ymax = hi95, n = n_eff)
+
+# FP_skew is assumed to be a list of 50 data.frames, each with $x and $y
+smooth_list <- FN_skew
+
+xmin <- min(sapply(smooth_list, function(d) min(d$x, na.rm = TRUE)))
+xmax <- max(sapply(smooth_list, function(d) max(d$x, na.rm = TRUE)))
+
+x_grid <- seq(xmin, xmax, length.out = 200)
+
+Y <- sapply(smooth_list, function(d) {
+  approx(d$x, d$y, xout = x_grid, rule = 1)$y  # NAs outside each curve's support
+})
+
+# 4) Average (and optional uncertainty across runs)
+avg_y  <- rowMeans(Y, na.rm = TRUE)
+n_eff  <- rowSums(!is.na(Y))
+sd_y   <- apply(Y, 1, sd, na.rm = TRUE)
+se_y   <- sd_y / sqrt(pmax(n_eff, 1))
+lo95   <- avg_y - 1.96 * se_y
+hi95   <- avg_y + 1.96 * se_y
+
+avg_curve_200_FN_skew <- data.frame(x = x_grid, y = avg_y, ymin = lo95, ymax = hi95, n = n_eff)
+
+
+# FP_skew is assumed to be a list of 50 data.frames, each with $x and $y
+smooth_list <- FN_kurt
+
+xmin <- min(sapply(smooth_list, function(d) min(d$x, na.rm = TRUE)))
+xmax <- max(sapply(smooth_list, function(d) max(d$x, na.rm = TRUE)))
+
+x_grid <- seq(xmin, xmax, length.out = 200)
+
+Y <- sapply(smooth_list, function(d) {
+  approx(d$x, d$y, xout = x_grid, rule = 1)$y  # NAs outside each curve's support
+})
+
+# 4) Average (and optional uncertainty across runs)
+avg_y  <- rowMeans(Y, na.rm = TRUE)
+n_eff  <- rowSums(!is.na(Y))
+sd_y   <- apply(Y, 1, sd, na.rm = TRUE)
+se_y   <- sd_y / sqrt(pmax(n_eff, 1))
+lo95   <- avg_y - 1.96 * se_y
+hi95   <- avg_y + 1.96 * se_y
+
+avg_curve_200_FN_kurt <- data.frame(x = x_grid, y = avg_y, ymin = lo95, ymax = hi95, n = n_eff)
+```
+
+# 400
+
+```{r message = FALSE}
+
+FP_skew <- vector("list", 50)
+FP_kurt <- vector("list", 50)
+FN_skew <- vector("list", 50)
+FN_kurt <- vector("list", 50)
+
+for (i in 1:50) {
+##!!
+seed <- GGMseed[i] 
+
+set.seed(seed)
+
+n <- 1000  # Number of samples
+p <- 100     # Number of variables
+mu <- rep(0, p)
+subsample_sizes <- c(200, 400, 600, 800, 1000)
+
+metrics <- read.csv("2-2_metrics_values.csv")
+metrics <- subset(metrics, abs(skewness) <= 5)
+
+data_forsigma <- huge.generator(n, d = p, graph = "cluster", vis = FALSE)
+Sigma <- as.matrix(data_forsigma$sigma)
+diag(Sigma) <- 1
+actual <- as.matrix(data_forsigma$theta)
+
+positions <- which(actual == 1 & upper.tri(actual), arr.ind = TRUE)
+# Convert to data frame
+positive <- as.data.frame(positions)
+colnames(positive) <- c("row", "col")
+
+positions <- which(actual == 0 & upper.tri(actual), arr.ind = TRUE)
+# Convert to data frame
+negative <- as.data.frame(positions)
+colnames(negative) <- c("row", "col")
+
+##!!
+dat <- read.csv(paste0("Synthetic_count_data_400_GGM_", seed,".csv")) 
+FPdata <- semi_join(dat, negative, by = c("row", "col"))
+FNdata <- semi_join(dat, positive, by = c("row", "col"))
+
+p1 <- ggplot(FPdata, aes(x = skewavg, y = FP_count)) + 
+      geom_smooth(method = "loess", se = TRUE)
+
+p2 <- ggplot(FPdata, aes(x = kurtavg, y = FP_count)) + 
+      geom_smooth(method = "loess", se = TRUE)
+
+p3 <- ggplot(FNdata, aes(x = skewavg, y = FN_count)) + 
+      geom_smooth(method = "loess", se = TRUE)
+
+p4 <- ggplot(FNdata, aes(x = kurtavg, y = FN_count)) + 
+      geom_smooth(method = "loess", se = TRUE)
+
+pb <- ggplot_build(p1)
+FP_skew[[i]] <- pb$data[[1]]
+pb <- ggplot_build(p2)
+FP_kurt[[i]] <- pb$data[[1]] 
+pb <- ggplot_build(p3)
+FN_skew[[i]] <- pb$data[[1]] 
+pb <- ggplot_build(p4)
+FN_kurt[[i]] <- pb$data[[1]] 
+
+print(i)
+}
+
+# FP_skew is assumed to be a list of 50 data.frames, each with $x and $y
+smooth_list <- FP_skew
+
+xmin <- min(sapply(smooth_list, function(d) min(d$x, na.rm = TRUE)))
+xmax <- max(sapply(smooth_list, function(d) max(d$x, na.rm = TRUE)))
+
+x_grid <- seq(xmin, xmax, length.out = 200)
+
+Y <- sapply(smooth_list, function(d) {
+  approx(d$x, d$y, xout = x_grid, rule = 1)$y  # NAs outside each curve's support
+})
+
+# 4) Average (and optional uncertainty across runs)
+avg_y  <- rowMeans(Y, na.rm = TRUE)
+n_eff  <- rowSums(!is.na(Y))
+sd_y   <- apply(Y, 1, sd, na.rm = TRUE)
+se_y   <- sd_y / sqrt(pmax(n_eff, 1))
+lo95   <- avg_y - 1.96 * se_y
+hi95   <- avg_y + 1.96 * se_y
+
+avg_curve_400_FP_skew <- data.frame(x = x_grid, y = avg_y, ymin = lo95, ymax = hi95, n = n_eff)
+
+# FP_skew is assumed to be a list of 50 data.frames, each with $x and $y
+smooth_list <- FP_kurt
+
+xmin <- min(sapply(smooth_list, function(d) min(d$x, na.rm = TRUE)))
+xmax <- max(sapply(smooth_list, function(d) max(d$x, na.rm = TRUE)))
+
+x_grid <- seq(xmin, xmax, length.out = 200)
+
+Y <- sapply(smooth_list, function(d) {
+  approx(d$x, d$y, xout = x_grid, rule = 1)$y  # NAs outside each curve's support
+})
+
+# 4) Average (and optional uncertainty across runs)
+avg_y  <- rowMeans(Y, na.rm = TRUE)
+n_eff  <- rowSums(!is.na(Y))
+sd_y   <- apply(Y, 1, sd, na.rm = TRUE)
+se_y   <- sd_y / sqrt(pmax(n_eff, 1))
+lo95   <- avg_y - 1.96 * se_y
+hi95   <- avg_y + 1.96 * se_y
+
+avg_curve_400_FP_kurt <- data.frame(x = x_grid, y = avg_y, ymin = lo95, ymax = hi95, n = n_eff)
+
+# FP_skew is assumed to be a list of 50 data.frames, each with $x and $y
+smooth_list <- FN_skew
+
+xmin <- min(sapply(smooth_list, function(d) min(d$x, na.rm = TRUE)))
+xmax <- max(sapply(smooth_list, function(d) max(d$x, na.rm = TRUE)))
+
+x_grid <- seq(xmin, xmax, length.out = 200)
+
+Y <- sapply(smooth_list, function(d) {
+  approx(d$x, d$y, xout = x_grid, rule = 1)$y  # NAs outside each curve's support
+})
+
+# 4) Average (and optional uncertainty across runs)
+avg_y  <- rowMeans(Y, na.rm = TRUE)
+n_eff  <- rowSums(!is.na(Y))
+sd_y   <- apply(Y, 1, sd, na.rm = TRUE)
+se_y   <- sd_y / sqrt(pmax(n_eff, 1))
+lo95   <- avg_y - 1.96 * se_y
+hi95   <- avg_y + 1.96 * se_y
+
+avg_curve_400_FN_skew <- data.frame(x = x_grid, y = avg_y, ymin = lo95, ymax = hi95, n = n_eff)
+
+
+# FP_skew is assumed to be a list of 50 data.frames, each with $x and $y
+smooth_list <- FN_kurt
+
+xmin <- min(sapply(smooth_list, function(d) min(d$x, na.rm = TRUE)))
+xmax <- max(sapply(smooth_list, function(d) max(d$x, na.rm = TRUE)))
+
+x_grid <- seq(xmin, xmax, length.out = 200)
+
+Y <- sapply(smooth_list, function(d) {
+  approx(d$x, d$y, xout = x_grid, rule = 1)$y  # NAs outside each curve's support
+})
+
+# 4) Average (and optional uncertainty across runs)
+avg_y  <- rowMeans(Y, na.rm = TRUE)
+n_eff  <- rowSums(!is.na(Y))
+sd_y   <- apply(Y, 1, sd, na.rm = TRUE)
+se_y   <- sd_y / sqrt(pmax(n_eff, 1))
+lo95   <- avg_y - 1.96 * se_y
+hi95   <- avg_y + 1.96 * se_y
+
+avg_curve_400_FN_kurt <- data.frame(x = x_grid, y = avg_y, ymin = lo95, ymax = hi95, n = n_eff)
+```
+
+
+# 600
+
+```{r message = FALSE}
+
+FP_skew <- vector("list", 50)
+FP_kurt <- vector("list", 50)
+FN_skew <- vector("list", 50)
+FN_kurt <- vector("list", 50)
+
+for (i in 1:50) {
+##!!
+seed <- GGMseed[i] 
+
+set.seed(seed)
+
+n <- 1000  # Number of samples
+p <- 100     # Number of variables
+mu <- rep(0, p)
+subsample_sizes <- c(200, 400, 600, 800, 1000)
+
+metrics <- read.csv("2-2_metrics_values.csv")
+metrics <- subset(metrics, abs(skewness) <= 5)
+
+data_forsigma <- huge.generator(n, d = p, graph = "cluster", vis = FALSE)
+Sigma <- as.matrix(data_forsigma$sigma)
+diag(Sigma) <- 1
+actual <- as.matrix(data_forsigma$theta)
+
+positions <- which(actual == 1 & upper.tri(actual), arr.ind = TRUE)
+# Convert to data frame
+positive <- as.data.frame(positions)
+colnames(positive) <- c("row", "col")
+
+positions <- which(actual == 0 & upper.tri(actual), arr.ind = TRUE)
+# Convert to data frame
+negative <- as.data.frame(positions)
+colnames(negative) <- c("row", "col")
+
+##!!
+dat <- read.csv(paste0("Synthetic_count_data_600_GGM_", seed,".csv")) 
+FPdata <- semi_join(dat, negative, by = c("row", "col"))
+FNdata <- semi_join(dat, positive, by = c("row", "col"))
+
+p1 <- ggplot(FPdata, aes(x = skewavg, y = FP_count)) + 
+      geom_smooth(method = "loess", se = TRUE)
+
+p2 <- ggplot(FPdata, aes(x = kurtavg, y = FP_count)) + 
+      geom_smooth(method = "loess", se = TRUE)
+
+p3 <- ggplot(FNdata, aes(x = skewavg, y = FN_count)) + 
+      geom_smooth(method = "loess", se = TRUE)
+
+p4 <- ggplot(FNdata, aes(x = kurtavg, y = FN_count)) + 
+      geom_smooth(method = "loess", se = TRUE)
+
+pb <- ggplot_build(p1)
+FP_skew[[i]] <- pb$data[[1]]
+pb <- ggplot_build(p2)
+FP_kurt[[i]] <- pb$data[[1]] 
+pb <- ggplot_build(p3)
+FN_skew[[i]] <- pb$data[[1]] 
+pb <- ggplot_build(p4)
+FN_kurt[[i]] <- pb$data[[1]] 
+
+print(i)
+}
+#F8766D #A3A500 #00BF7D #00B0F6 #E76BF3
+
+# FP_skew is assumed to be a list of 50 data.frames, each with $x and $y
+smooth_list <- FP_skew
+
+xmin <- min(sapply(smooth_list, function(d) min(d$x, na.rm = TRUE)))
+xmax <- max(sapply(smooth_list, function(d) max(d$x, na.rm = TRUE)))
+
+x_grid <- seq(xmin, xmax, length.out = 200)
+
+Y <- sapply(smooth_list, function(d) {
+  approx(d$x, d$y, xout = x_grid, rule = 1)$y  # NAs outside each curve's support
+})
+
+# 4) Average (and optional uncertainty across runs)
+avg_y  <- rowMeans(Y, na.rm = TRUE)
+n_eff  <- rowSums(!is.na(Y))
+sd_y   <- apply(Y, 1, sd, na.rm = TRUE)
+se_y   <- sd_y / sqrt(pmax(n_eff, 1))
+lo95   <- avg_y - 1.96 * se_y
+hi95   <- avg_y + 1.96 * se_y
+
+avg_curve_600_FP_skew <- data.frame(x = x_grid, y = avg_y, ymin = lo95, ymax = hi95, n = n_eff)
+
+# FP_skew is assumed to be a list of 50 data.frames, each with $x and $y
+smooth_list <- FP_kurt
+
+xmin <- min(sapply(smooth_list, function(d) min(d$x, na.rm = TRUE)))
+xmax <- max(sapply(smooth_list, function(d) max(d$x, na.rm = TRUE)))
+
+x_grid <- seq(xmin, xmax, length.out = 200)
+
+Y <- sapply(smooth_list, function(d) {
+  approx(d$x, d$y, xout = x_grid, rule = 1)$y  # NAs outside each curve's support
+})
+
+# 4) Average (and optional uncertainty across runs)
+avg_y  <- rowMeans(Y, na.rm = TRUE)
+n_eff  <- rowSums(!is.na(Y))
+sd_y   <- apply(Y, 1, sd, na.rm = TRUE)
+se_y   <- sd_y / sqrt(pmax(n_eff, 1))
+lo95   <- avg_y - 1.96 * se_y
+hi95   <- avg_y + 1.96 * se_y
+
+avg_curve_600_FP_kurt <- data.frame(x = x_grid, y = avg_y, ymin = lo95, ymax = hi95, n = n_eff)
+
+# FP_skew is assumed to be a list of 50 data.frames, each with $x and $y
+smooth_list <- FN_skew
+
+xmin <- min(sapply(smooth_list, function(d) min(d$x, na.rm = TRUE)))
+xmax <- max(sapply(smooth_list, function(d) max(d$x, na.rm = TRUE)))
+
+x_grid <- seq(xmin, xmax, length.out = 200)
+
+Y <- sapply(smooth_list, function(d) {
+  approx(d$x, d$y, xout = x_grid, rule = 1)$y  # NAs outside each curve's support
+})
+
+# 4) Average (and optional uncertainty across runs)
+avg_y  <- rowMeans(Y, na.rm = TRUE)
+n_eff  <- rowSums(!is.na(Y))
+sd_y   <- apply(Y, 1, sd, na.rm = TRUE)
+se_y   <- sd_y / sqrt(pmax(n_eff, 1))
+lo95   <- avg_y - 1.96 * se_y
+hi95   <- avg_y + 1.96 * se_y
+
+avg_curve_600_FN_skew <- data.frame(x = x_grid, y = avg_y, ymin = lo95, ymax = hi95, n = n_eff)
+
+
+# FP_skew is assumed to be a list of 50 data.frames, each with $x and $y
+smooth_list <- FN_kurt
+
+xmin <- min(sapply(smooth_list, function(d) min(d$x, na.rm = TRUE)))
+xmax <- max(sapply(smooth_list, function(d) max(d$x, na.rm = TRUE)))
+
+x_grid <- seq(xmin, xmax, length.out = 200)
+
+Y <- sapply(smooth_list, function(d) {
+  approx(d$x, d$y, xout = x_grid, rule = 1)$y  # NAs outside each curve's support
+})
+
+# 4) Average (and optional uncertainty across runs)
+avg_y  <- rowMeans(Y, na.rm = TRUE)
+n_eff  <- rowSums(!is.na(Y))
+sd_y   <- apply(Y, 1, sd, na.rm = TRUE)
+se_y   <- sd_y / sqrt(pmax(n_eff, 1))
+lo95   <- avg_y - 1.96 * se_y
+hi95   <- avg_y + 1.96 * se_y
+
+avg_curve_600_FN_kurt <- data.frame(x = x_grid, y = avg_y, ymin = lo95, ymax = hi95, n = n_eff)
+```
+
+
+# 800
+
+```{r message = FALSE}
+
+FP_skew <- vector("list", 50)
+FP_kurt <- vector("list", 50)
+FN_skew <- vector("list", 50)
+FN_kurt <- vector("list", 50)
+
+for (i in 1:50) {
+##!!
+seed <- GGMseed[i] 
+
+set.seed(seed)
+
+n <- 1000  # Number of samples
+p <- 100     # Number of variables
+mu <- rep(0, p)
+subsample_sizes <- c(200, 400, 600, 800, 1000)
+
+metrics <- read.csv("2-2_metrics_values.csv")
+metrics <- subset(metrics, abs(skewness) <= 5)
+
+data_forsigma <- huge.generator(n, d = p, graph = "cluster", vis = FALSE)
+Sigma <- as.matrix(data_forsigma$sigma)
+diag(Sigma) <- 1
+actual <- as.matrix(data_forsigma$theta)
+
+positions <- which(actual == 1 & upper.tri(actual), arr.ind = TRUE)
+# Convert to data frame
+positive <- as.data.frame(positions)
+colnames(positive) <- c("row", "col")
+
+positions <- which(actual == 0 & upper.tri(actual), arr.ind = TRUE)
+# Convert to data frame
+negative <- as.data.frame(positions)
+colnames(negative) <- c("row", "col")
+
+##!!
+dat <- read.csv(paste0("Synthetic_count_data_800_GGM_", seed,".csv")) 
+FPdata <- semi_join(dat, negative, by = c("row", "col"))
+FNdata <- semi_join(dat, positive, by = c("row", "col"))
+
+p1 <- ggplot(FPdata, aes(x = skewavg, y = FP_count)) + 
+      geom_smooth(method = "loess", se = TRUE)
+
+p2 <- ggplot(FPdata, aes(x = kurtavg, y = FP_count)) + 
+      geom_smooth(method = "loess", se = TRUE)
+
+p3 <- ggplot(FNdata, aes(x = skewavg, y = FN_count)) + 
+      geom_smooth(method = "loess", se = TRUE)
+
+p4 <- ggplot(FNdata, aes(x = kurtavg, y = FN_count)) + 
+      geom_smooth(method = "loess", se = TRUE)
+
+pb <- ggplot_build(p1)
+FP_skew[[i]] <- pb$data[[1]]
+pb <- ggplot_build(p2)
+FP_kurt[[i]] <- pb$data[[1]] 
+pb <- ggplot_build(p3)
+FN_skew[[i]] <- pb$data[[1]] 
+pb <- ggplot_build(p4)
+FN_kurt[[i]] <- pb$data[[1]] 
+
+print(i)
+}
+#F8766D #A3A500 #00BF7D #00B0F6 #E76BF3
+
+# FP_skew is assumed to be a list of 50 data.frames, each with $x and $y
+smooth_list <- FP_skew
+
+xmin <- min(sapply(smooth_list, function(d) min(d$x, na.rm = TRUE)))
+xmax <- max(sapply(smooth_list, function(d) max(d$x, na.rm = TRUE)))
+
+x_grid <- seq(xmin, xmax, length.out = 200)
+
+Y <- sapply(smooth_list, function(d) {
+  approx(d$x, d$y, xout = x_grid, rule = 1)$y  # NAs outside each curve's support
+})
+
+# 4) Average (and optional uncertainty across runs)
+avg_y  <- rowMeans(Y, na.rm = TRUE)
+n_eff  <- rowSums(!is.na(Y))
+sd_y   <- apply(Y, 1, sd, na.rm = TRUE)
+se_y   <- sd_y / sqrt(pmax(n_eff, 1))
+lo95   <- avg_y - 1.96 * se_y
+hi95   <- avg_y + 1.96 * se_y
+
+avg_curve_800_FP_skew <- data.frame(x = x_grid, y = avg_y, ymin = lo95, ymax = hi95, n = n_eff)
+
+# FP_skew is assumed to be a list of 50 data.frames, each with $x and $y
+smooth_list <- FP_kurt
+
+xmin <- min(sapply(smooth_list, function(d) min(d$x, na.rm = TRUE)))
+xmax <- max(sapply(smooth_list, function(d) max(d$x, na.rm = TRUE)))
+
+x_grid <- seq(xmin, xmax, length.out = 200)
+
+Y <- sapply(smooth_list, function(d) {
+  approx(d$x, d$y, xout = x_grid, rule = 1)$y  # NAs outside each curve's support
+})
+
+# 4) Average (and optional uncertainty across runs)
+avg_y  <- rowMeans(Y, na.rm = TRUE)
+n_eff  <- rowSums(!is.na(Y))
+sd_y   <- apply(Y, 1, sd, na.rm = TRUE)
+se_y   <- sd_y / sqrt(pmax(n_eff, 1))
+lo95   <- avg_y - 1.96 * se_y
+hi95   <- avg_y + 1.96 * se_y
+
+avg_curve_800_FP_kurt <- data.frame(x = x_grid, y = avg_y, ymin = lo95, ymax = hi95, n = n_eff)
+
+# FP_skew is assumed to be a list of 50 data.frames, each with $x and $y
+smooth_list <- FN_skew
+
+xmin <- min(sapply(smooth_list, function(d) min(d$x, na.rm = TRUE)))
+xmax <- max(sapply(smooth_list, function(d) max(d$x, na.rm = TRUE)))
+
+x_grid <- seq(xmin, xmax, length.out = 200)
+
+Y <- sapply(smooth_list, function(d) {
+  approx(d$x, d$y, xout = x_grid, rule = 1)$y  # NAs outside each curve's support
+})
+
+# 4) Average (and optional uncertainty across runs)
+avg_y  <- rowMeans(Y, na.rm = TRUE)
+n_eff  <- rowSums(!is.na(Y))
+sd_y   <- apply(Y, 1, sd, na.rm = TRUE)
+se_y   <- sd_y / sqrt(pmax(n_eff, 1))
+lo95   <- avg_y - 1.96 * se_y
+hi95   <- avg_y + 1.96 * se_y
+
+avg_curve_800_FN_skew <- data.frame(x = x_grid, y = avg_y, ymin = lo95, ymax = hi95, n = n_eff)
+
+
+# FP_skew is assumed to be a list of 50 data.frames, each with $x and $y
+smooth_list <- FN_kurt
+
+xmin <- min(sapply(smooth_list, function(d) min(d$x, na.rm = TRUE)))
+xmax <- max(sapply(smooth_list, function(d) max(d$x, na.rm = TRUE)))
+
+x_grid <- seq(xmin, xmax, length.out = 200)
+
+Y <- sapply(smooth_list, function(d) {
+  approx(d$x, d$y, xout = x_grid, rule = 1)$y  # NAs outside each curve's support
+})
+
+# 4) Average (and optional uncertainty across runs)
+avg_y  <- rowMeans(Y, na.rm = TRUE)
+n_eff  <- rowSums(!is.na(Y))
+sd_y   <- apply(Y, 1, sd, na.rm = TRUE)
+se_y   <- sd_y / sqrt(pmax(n_eff, 1))
+lo95   <- avg_y - 1.96 * se_y
+hi95   <- avg_y + 1.96 * se_y
+
+avg_curve_800_FN_kurt <- data.frame(x = x_grid, y = avg_y, ymin = lo95, ymax = hi95, n = n_eff)
+```
+
+
+# 1000
+
+```{r message = FALSE}
+
+FP_skew <- vector("list", 50)
+FP_kurt <- vector("list", 50)
+FN_skew <- vector("list", 50)
+FN_kurt <- vector("list", 50)
+
+for (i in 1:50) {
+##!!
+seed <- GGMseed[i] 
+
+set.seed(seed)
+
+n <- 1000  # Number of samples
+p <- 100     # Number of variables
+mu <- rep(0, p)
+subsample_sizes <- c(200, 400, 600, 800, 1000)
+
+metrics <- read.csv("2-2_metrics_values.csv")
+metrics <- subset(metrics, abs(skewness) <= 5)
+
+data_forsigma <- huge.generator(n, d = p, graph = "cluster", vis = FALSE)
+Sigma <- as.matrix(data_forsigma$sigma)
+diag(Sigma) <- 1
+actual <- as.matrix(data_forsigma$theta)
+
+positions <- which(actual == 1 & upper.tri(actual), arr.ind = TRUE)
+# Convert to data frame
+positive <- as.data.frame(positions)
+colnames(positive) <- c("row", "col")
+
+positions <- which(actual == 0 & upper.tri(actual), arr.ind = TRUE)
+# Convert to data frame
+negative <- as.data.frame(positions)
+colnames(negative) <- c("row", "col")
+
+##!!
+dat <- read.csv(paste0("Synthetic_count_data_1000_GGM_", seed,".csv")) 
+FPdata <- semi_join(dat, negative, by = c("row", "col"))
+FNdata <- semi_join(dat, positive, by = c("row", "col"))
+
+p1 <- ggplot(FPdata, aes(x = skewavg, y = FP_count)) + 
+      geom_smooth(method = "loess", se = TRUE)
+
+p2 <- ggplot(FPdata, aes(x = kurtavg, y = FP_count)) + 
+      geom_smooth(method = "loess", se = TRUE)
+
+p3 <- ggplot(FNdata, aes(x = skewavg, y = FN_count)) + 
+      geom_smooth(method = "loess", se = TRUE)
+
+p4 <- ggplot(FNdata, aes(x = kurtavg, y = FN_count)) + 
+      geom_smooth(method = "loess", se = TRUE)
+
+pb <- ggplot_build(p1)
+FP_skew[[i]] <- pb$data[[1]]
+pb <- ggplot_build(p2)
+FP_kurt[[i]] <- pb$data[[1]] 
+pb <- ggplot_build(p3)
+FN_skew[[i]] <- pb$data[[1]] 
+pb <- ggplot_build(p4)
+FN_kurt[[i]] <- pb$data[[1]] 
+
+print(i)
+}
+#F8766D #A3A500 #00BF7D #00B0F6 #E76BF3
+
+# FP_skew is assumed to be a list of 50 data.frames, each with $x and $y
+smooth_list <- FP_skew
+
+xmin <- min(sapply(smooth_list, function(d) min(d$x, na.rm = TRUE)))
+xmax <- max(sapply(smooth_list, function(d) max(d$x, na.rm = TRUE)))
+
+x_grid <- seq(xmin, xmax, length.out = 200)
+
+Y <- sapply(smooth_list, function(d) {
+  approx(d$x, d$y, xout = x_grid, rule = 1)$y  # NAs outside each curve's support
+})
+
+# 4) Average (and optional uncertainty across runs)
+avg_y  <- rowMeans(Y, na.rm = TRUE)
+n_eff  <- rowSums(!is.na(Y))
+sd_y   <- apply(Y, 1, sd, na.rm = TRUE)
+se_y   <- sd_y / sqrt(pmax(n_eff, 1))
+lo95   <- avg_y - 1.96 * se_y
+hi95   <- avg_y + 1.96 * se_y
+
+avg_curve_1000_FP_skew <- data.frame(x = x_grid, y = avg_y, ymin = lo95, ymax = hi95, n = n_eff)
+
+# FP_skew is assumed to be a list of 50 data.frames, each with $x and $y
+smooth_list <- FP_kurt
+
+xmin <- min(sapply(smooth_list, function(d) min(d$x, na.rm = TRUE)))
+xmax <- max(sapply(smooth_list, function(d) max(d$x, na.rm = TRUE)))
+
+x_grid <- seq(xmin, xmax, length.out = 200)
+
+Y <- sapply(smooth_list, function(d) {
+  approx(d$x, d$y, xout = x_grid, rule = 1)$y  # NAs outside each curve's support
+})
+
+# 4) Average (and optional uncertainty across runs)
+avg_y  <- rowMeans(Y, na.rm = TRUE)
+n_eff  <- rowSums(!is.na(Y))
+sd_y   <- apply(Y, 1, sd, na.rm = TRUE)
+se_y   <- sd_y / sqrt(pmax(n_eff, 1))
+lo95   <- avg_y - 1.96 * se_y
+hi95   <- avg_y + 1.96 * se_y
+
+avg_curve_1000_FP_kurt <- data.frame(x = x_grid, y = avg_y, ymin = lo95, ymax = hi95, n = n_eff)
+
+# FP_skew is assumed to be a list of 50 data.frames, each with $x and $y
+smooth_list <- FN_skew
+
+xmin <- min(sapply(smooth_list, function(d) min(d$x, na.rm = TRUE)))
+xmax <- max(sapply(smooth_list, function(d) max(d$x, na.rm = TRUE)))
+
+x_grid <- seq(xmin, xmax, length.out = 200)
+
+Y <- sapply(smooth_list, function(d) {
+  approx(d$x, d$y, xout = x_grid, rule = 1)$y  # NAs outside each curve's support
+})
+
+# 4) Average (and optional uncertainty across runs)
+avg_y  <- rowMeans(Y, na.rm = TRUE)
+n_eff  <- rowSums(!is.na(Y))
+sd_y   <- apply(Y, 1, sd, na.rm = TRUE)
+se_y   <- sd_y / sqrt(pmax(n_eff, 1))
+lo95   <- avg_y - 1.96 * se_y
+hi95   <- avg_y + 1.96 * se_y
+
+avg_curve_1000_FN_skew <- data.frame(x = x_grid, y = avg_y, ymin = lo95, ymax = hi95, n = n_eff)
+
+
+# FP_skew is assumed to be a list of 50 data.frames, each with $x and $y
+smooth_list <- FN_kurt
+
+xmin <- min(sapply(smooth_list, function(d) min(d$x, na.rm = TRUE)))
+xmax <- max(sapply(smooth_list, function(d) max(d$x, na.rm = TRUE)))
+
+x_grid <- seq(xmin, xmax, length.out = 200)
+
+Y <- sapply(smooth_list, function(d) {
+  approx(d$x, d$y, xout = x_grid, rule = 1)$y  # NAs outside each curve's support
+})
+
+# 4) Average (and optional uncertainty across runs)
+avg_y  <- rowMeans(Y, na.rm = TRUE)
+n_eff  <- rowSums(!is.na(Y))
+sd_y   <- apply(Y, 1, sd, na.rm = TRUE)
+se_y   <- sd_y / sqrt(pmax(n_eff, 1))
+lo95   <- avg_y - 1.96 * se_y
+hi95   <- avg_y + 1.96 * se_y
+
+avg_curve_1000_FN_kurt <- data.frame(x = x_grid, y = avg_y, ymin = lo95, ymax = hi95, n = n_eff)
+```
+
+# plot
+
+```{r}
+#F8766D #A3A500 #00BF7D #00B0F6 #E76BF3
+(p1 <- ggplot() +
+  geom_line(data = avg_curve_200_FP_skew, aes(x, y/5), color = "#F8766D", linewidth = 1) +
+  #geom_ribbon(data = avg_curve_200_FP_skew, aes(x, ymin = ymin, ymax = ymax), alpha = 0.2) +
+  
+  geom_line(data = avg_curve_400_FP_skew, aes(x, y/5), color = "#A3A500", linewidth = 1) +
+  #geom_ribbon(data = avg_curve_400_FP_skew, aes(x, ymin = ymin, ymax = ymax), alpha = 0.2) +
+  
+  geom_line(data = avg_curve_600_FP_skew, aes(x, y/5), color = "#00BF7D", linewidth = 1) +
+  #geom_ribbon(data = avg_curve_600_FP_skew, aes(x, ymin = ymin, ymax = ymax), alpha = 0.2) +
+  
+  geom_line(data = avg_curve_800_FP_skew, aes(x, y/5), color = "#00B0F6", linewidth = 1) +
+  #geom_ribbon(data = avg_curve_800_FP_skew, aes(x, ymin = ymin, ymax = ymax), alpha = 0.2) +
+  
+  geom_line(data = avg_curve_1000_FP_skew, aes(x, y/5), color = "#E76BF3", linewidth = 1) +
+  #geom_ribbon(data = avg_curve_1000_FP_skew, aes(x, ymin = ymin, ymax = ymax), alpha = 0.2) +
+  
+  labs(y = "FP rate (%)", x = "Average skewness") + theme_minimal())
+
+ggsave("Synthetic_FPdata_skew.png", plot = p1, width = 6, height = 5, dpi = 600)
+
+(p2 <- ggplot() +
+  geom_line(data = avg_curve_200_FP_kurt, aes(x, y/5), color = "#F8766D", linewidth = 1) +
+  #geom_ribbon(data = avg_curve_200_FP_kurt, aes(x, ymin = ymin, ymax = ymax), alpha = 0.2) +
+  
+  geom_line(data = avg_curve_400_FP_kurt, aes(x, y/5), color = "#A3A500", linewidth = 1) +
+  #geom_ribbon(data = avg_curve_400_FP_kurt, aes(x, ymin = ymin, ymax = ymax), alpha = 0.2) +
+  
+  geom_line(data = avg_curve_600_FP_kurt, aes(x, y/5), color = "#00BF7D", linewidth = 1) +
+  #geom_ribbon(data = avg_curve_600_FP_kurt, aes(x, ymin = ymin, ymax = ymax), alpha = 0.2) +
+  
+  geom_line(data = avg_curve_800_FP_kurt, aes(x, y/5), color = "#00B0F6", linewidth = 1) +
+  #geom_ribbon(data = avg_curve_800_FP_kurt, aes(x, ymin = ymin, ymax = ymax), alpha = 0.2) +
+  
+  geom_line(data = avg_curve_1000_FP_kurt, aes(x, y/5), color = "#E76BF3", linewidth = 1) +
+  #geom_ribbon(data = avg_curve_1000_FP_kurt, aes(x, ymin = ymin, ymax = ymax), alpha = 0.2) +
+  
+  xlim(0, 28)+
+  
+  labs(y = "FP rate (%)", x = "Average kurtosis") + theme_minimal())
+
+ggsave("Synthetic_FPdata_kurt.png", plot = p2, width = 6, height = 5, dpi = 600)
+
+(p3 <- ggplot() +
+  geom_line(data = avg_curve_200_FN_skew, aes(x, y/5), color = "#F8766D", linewidth = 1) +
+  #geom_ribbon(data = avg_curve_200_FN_skew, aes(x, ymin = ymin, ymax = ymax), alpha = 0.2) +
+  
+  geom_line(data = avg_curve_400_FN_skew, aes(x, y/5), color = "#A3A500", linewidth = 1) +
+  #geom_ribbon(data = avg_curve_400_FN_skew, aes(x, ymin = ymin, ymax = ymax), alpha = 0.2) +
+  
+  geom_line(data = avg_curve_600_FN_skew, aes(x, y/5), color = "#00BF7D", linewidth = 1) +
+  #geom_ribbon(data = avg_curve_600_FN_skew, aes(x, ymin = ymin, ymax = ymax), alpha = 0.2) +
+  
+  geom_line(data = avg_curve_800_FN_skew, aes(x, y/5), color = "#00B0F6", linewidth = 1) +
+  #geom_ribbon(data = avg_curve_800_FN_skew, aes(x, ymin = ymin, ymax = ymax), alpha = 0.2) +
+  
+  geom_line(data = avg_curve_1000_FN_skew, aes(x, y/5), color = "#E76BF3", linewidth = 1) +
+  #geom_ribbon(data = avg_curve_1000_FN_skew, aes(x, ymin = ymin, ymax = ymax), alpha = 0.2) +
+    
+  labs(y = "FN rate (%)", x = "Average skewness") + theme_minimal())
+
+ggsave("Synthetic_FNdata_skew.png", plot = p3, width = 6, height = 5, dpi = 600)
+
+(p4 <- ggplot() +
+  geom_line(data = avg_curve_200_FN_kurt, aes(x, y/5), color = "#F8766D", linewidth = 1) +
+  #geom_ribbon(data = avg_curve_200_FP_kurt, aes(x, ymin = ymin, ymax = ymax), alpha = 0.2) +
+  
+  geom_line(data = avg_curve_400_FN_kurt, aes(x, y/5), color = "#A3A500", linewidth = 1) +
+  #geom_ribbon(data = avg_curve_400_FP_kurt, aes(x, ymin = ymin, ymax = ymax), alpha = 0.2) +
+  
+  geom_line(data = avg_curve_600_FN_kurt, aes(x, y/5), color = "#00BF7D", linewidth = 1) +
+  #geom_ribbon(data = avg_curve_600_FP_kurt, aes(x, ymin = ymin, ymax = ymax), alpha = 0.2) +
+  
+  geom_line(data = avg_curve_800_FN_kurt, aes(x, y/5), color = "#00B0F6", linewidth = 1) +
+  #geom_ribbon(data = avg_curve_800_FP_kurt, aes(x, ymin = ymin, ymax = ymax), alpha = 0.2) +
+  
+  geom_line(data = avg_curve_1000_FN_kurt, aes(x, y/5), color = "#E76BF3", linewidth = 1) +
+  #geom_ribbon(data = avg_curve_1000_FP_kurt, aes(x, ymin = ymin, ymax = ymax), alpha = 0.2) +
+    
+  xlim(0, 28)+
+  
+  labs(y = "FN rate (%)", x = "Average kurtosis") + theme_minimal())
+
+ggsave("Synthetic_FNdata_kurt.png", plot = p4, width = 6, height = 5, dpi = 600)
+```
+
